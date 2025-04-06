@@ -1,123 +1,411 @@
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class DeliveryRouteOptimization {
-    static int[][] distanceMatrix;
-    static String[] locations;
-    
-    // Method to take user input for locations and distance matrix
-    public static void getUserInput() {
-        Scanner scanner = new Scanner(System.in);
-        
-        System.out.print("Enter the number of locations: ");
-        int n = scanner.nextInt();
-        scanner.nextLine(); // Consume newline
-        
-        locations = new String[n];
-        distanceMatrix = new int[n][n];
-        
-        System.out.println("Enter location names:");
-        for (int i = 0; i < n; i++) {
-            System.out.print("Location " + (i + 1) + ": ");
-            locations[i] = scanner.nextLine();
-        }
-        
-        System.out.println("Enter distance matrix:");
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < n; j++) {
-                if (i == j) {
-                    distanceMatrix[i][j] = 0;
-                } else {
-                    System.out.print("Distance from " + locations[i] + " to " + locations[j] + ": ");
-                    distanceMatrix[i][j] = scanner.nextInt();
-                }
-            }
-        }
-    }
-    
-    // Greedy TSP Implementation
+    // Distance Matrix (Adjacency Matrix)
+    static int[][] distanceMatrix = {
+        {0, 12, 18, 22},
+        {12, 0, 40, 30},
+        {18, 40, 0, 35},
+        {22, 30, 35, 0}
+    };
+
+    // Location names
+    static String[] locations = {"Warehouse A", "Warehouse B", "Center C", "Center D"};
+
+    // Greedy TSP
     public static String greedyTSP(int[][] dist) {
         int n = dist.length;
         boolean[] visited = new boolean[n];
-        StringBuilder path = new StringBuilder("Path: ");
+        List<Integer> path = new ArrayList<>();
         int totalCost = 0;
+
+        // Start at first location (Warehouse A)
         int current = 0;
         visited[current] = true;
-        path.append(locations[current]);
-        
-        for (int i = 1; i < n; i++) {
-            int next = -1, minDist = Integer.MAX_VALUE;
-            for (int j = 0; j < n; j++) {
-                if (!visited[j] && dist[current][j] < minDist) {
-                    minDist = dist[current][j];
-                    next = j;
-                }
-            }
+        path.add(current);
+
+        for (int i = 0; i < n - 1; i++) {
+            int next = findNearestNeighbor(current, visited, dist);
+            if (next == -1) break;
+
+            totalCost += dist[current][next];
             visited[next] = true;
-            totalCost += minDist;
-            path.append(" -> ").append(locations[next]);
+            path.add(next);
             current = next;
         }
-        totalCost += dist[current][0]; // Return to start
-        path.append(" -> ").append(locations[0]);
-        
-        return path.toString() + "\nTotal Cost: " + totalCost;
-    }
-    
-        // Dynamic Programming (Held-Karp) TSP Implementation
-        public static int tspDP(int mask, int pos, int[][] dp, int[][] dist, int n) {
-        if (mask == (1 << n) - 1) return dist[pos][0]; // Return to start
-        if (dp[mask][pos] != -1) return dp[mask][pos];
-    
-        int minCost = Integer.MAX_VALUE;
-        for (int city = 0; city < n; city++) {
-            if ((mask & (1 << city)) == 0) { // If city is not visited
-                int newCost = dist[pos][city] + tspDP(mask | (1 << city), city, dp, dist, n);
-                minCost = Math.min(minCost, newCost);
-            }
-        }
-        return dp[mask][pos] = minCost;
-    }
-    
-    public static String dynamicProgrammingTSP(int[][] dist) {
-        int n = dist.length;
-        int[][] dp = new int[1 << n][n];
-        for (int[] row : dp) Arrays.fill(row, -1);
-        int cost = tspDP(1, 0, dp, dist, n);
-        return "Optimal Cost (DP): " + cost;
+
+        // Return to start
+        totalCost += dist[current][0];
+        path.add(0);
+
+        return formatPath(path, totalCost);
     }
 
-    
-    // Backtracking TSP Implementation
-    public static int tspBacktrack(int current, int visited, int[][] dp, int[][] dist, int n) {
-        if (visited == (1 << n) - 1) return dist[current][0];
-        if (dp[current][visited] != -1) return dp[current][visited];
-        
-        int minCost = Integer.MAX_VALUE;
-        for (int i = 0; i < n; i++) {
-            if ((visited & (1 << i)) == 0) {
-                int cost = dist[current][i] + tspBacktrack(i, visited | (1 << i), dp, dist, n);
-                minCost = Math.min(minCost, cost);
+    private static int findNearestNeighbor(int current, boolean[] visited, int[][] dist) {
+        int minDist = Integer.MAX_VALUE;
+        int nearest = -1;
+
+        for (int i = 0; i < dist.length; i++) {
+            if (!visited[i] && dist[current][i] < minDist && dist[current][i] > 0) {
+                minDist = dist[current][i];
+                nearest = i;
             }
         }
-        return dp[current][visited] = minCost;
+        return nearest;
     }
-    
+
+    // Dynamic Programming TSP (Held-Karp algorithm)
+    public static String dynamicProgrammingTSP(int[][] dist) {
+        int n = dist.length;
+        int VISITED_ALL = (1 << n) - 1;
+        int[][] dp = new int[n][1 << n];
+        int[][] path = new int[n][1 << n];
+        String[][] pathStr = new String[n][1 << n];
+
+        // Initialize DP table
+        for (int[] row : dp) Arrays.fill(row, Integer.MAX_VALUE / 2);
+        dp[0][1] = 0; // Starting at location 0 (Warehouse A)
+        pathStr[0][1] = locations[0];
+
+        // Fill DP table
+        for (int mask = 1; mask < (1 << n); mask++) {
+            for (int i = 0; i < n; i++) {
+                if ((mask & (1 << i)) == 0) continue;
+                
+                for (int j = 0; j < n; j++) {
+                    if ((mask & (1 << j)) != 0) continue;
+                    
+                    int newMask = mask | (1 << j);
+                    if (dp[j][newMask] > dp[i][mask] + dist[i][j]) {
+                        dp[j][newMask] = dp[i][mask] + dist[i][j];
+                        path[j][newMask] = i;
+                        pathStr[j][newMask] = pathStr[i][mask] + " -> " + locations[j];
+                    }
+                }
+            }
+        }
+
+        // Find the minimum distance to return to start
+        int minDist = Integer.MAX_VALUE;
+        int last = -1;
+        String finalPath = "";
+        for (int i = 1; i < n; i++) {
+            int currentDist = dp[i][VISITED_ALL] + dist[i][0];
+            if (currentDist < minDist) {
+                minDist = currentDist;
+                last = i;
+                finalPath = pathStr[i][VISITED_ALL] + " -> " + locations[0];
+            }
+        }
+
+        return "Optimal Cost (DP): " + minDist + " | Path: " + finalPath;
+    }
+
+    // Backtracking TSP
     public static String backtrackingTSP(int[][] dist) {
         int n = dist.length;
-        int[][] dp = new int[n][1 << n];
-        for (int[] row : dp) Arrays.fill(row, -1);
-        int cost = tspBacktrack(0, 1, dp, dist, n);
-        return "Optimal Cost (Backtracking): " + cost;
+        boolean[] visited = new boolean[n];
+        int[] minCost = {Integer.MAX_VALUE};
+        List<Integer> bestPath = new ArrayList<>();
+
+        // Start at first location (Warehouse A)
+        visited[0] = true;
+        List<Integer> currentPath = new ArrayList<>();
+        currentPath.add(0);
+
+        backtrack(0, visited, dist, 0, 1, minCost, currentPath, bestPath, n);
+
+        return "Optimal Cost (Backtracking): " + minCost[0] + " | Path: " + formatPath(bestPath, minCost[0]);
     }
-    
-    // Main method
+
+    private static void backtrack(int current, boolean[] visited, int[][] dist, int currentCost, 
+                                int count, int[] minCost, List<Integer> currentPath, 
+                                List<Integer> bestPath, int n) {
+        if (count == n) {
+            int totalCost = currentCost + dist[current][0];
+            if (totalCost < minCost[0]) {
+                minCost[0] = totalCost;
+                bestPath.clear();
+                bestPath.addAll(currentPath);
+                bestPath.add(0);
+            }
+            return;
+        }
+
+        for (int i = 0; i < n; i++) {
+            if (!visited[i] && dist[current][i] > 0) {
+                visited[i] = true;
+                currentPath.add(i);
+                
+                backtrack(i, visited, dist, currentCost + dist[current][i], 
+                         count + 1, minCost, currentPath, bestPath, n);
+                
+                visited[i] = false;
+                currentPath.remove(currentPath.size() - 1);
+            }
+        }
+    }
+
+    // Divide and Conquer TSP
+    public static String divideAndConquerTSP(int[][] dist) {
+        int n = dist.length;
+        boolean[] visited = new boolean[n];
+        StringBuilder path = new StringBuilder();
+        int cost = divideAndConquerHelper(0, visited, 0, dist, n, path);
+        return "Divide & Conquer Cost: " + cost + " | Path: " + path.toString();
+    }
+
+    private static int divideAndConquerHelper(int pos, boolean[] visited, int currentCost, 
+                                            int[][] dist, int n, StringBuilder path) {
+        if (allVisited(visited)) {
+            path.append(locations[pos]).append(" -> ").append(locations[0]);
+            return currentCost + dist[pos][0];
+        }
+
+        visited[pos] = true;
+        path.append(locations[pos]).append(" -> ");
+
+        int minCost = Integer.MAX_VALUE;
+        StringBuilder minPath = new StringBuilder();
+
+        for (int i = 0; i < n; i++) {
+            if (!visited[i] && dist[pos][i] > 0) {
+                StringBuilder currentPath = new StringBuilder();
+                int cost = divideAndConquerHelper(i, Arrays.copyOf(visited, n), 
+                                                currentCost + dist[pos][i], dist, n, currentPath);
+                
+                if (cost < minCost) {
+                    minCost = cost;
+                    minPath = currentPath;
+                }
+            }
+        }
+
+        path.append(minPath.toString());
+        return minCost;
+    }
+
+    private static boolean allVisited(boolean[] visited) {
+        for (boolean v : visited) {
+            if (!v) return false;
+        }
+        return true;
+    }
+
+    // Insertion Sort
+    public static String insertionSort(int[] arr) {
+        for (int i = 1; i < arr.length; i++) {
+            int key = arr[i];
+            int j = i - 1;
+
+            while (j >= 0 && arr[j] > key) {
+                arr[j + 1] = arr[j];
+                j--;
+            }
+            arr[j + 1] = key;
+        }
+        return "Sorted Array: " + Arrays.toString(arr);
+    }
+
+    // Binary Search
+    public static String binarySearch(int[] arr, int target) {
+        int left = 0, right = arr.length - 1;
+        while (left <= right) {
+            int mid = left + (right - left) / 2;
+            if (arr[mid] == target) {
+                return "Binary Search {" + target + " found at index}: " + mid;
+            }
+            if (arr[mid] < target) {
+                left = mid + 1;
+            } else {
+                right = mid - 1;
+            }
+        }
+        return "Binary Search {" + target + " not found}";
+    }
+
+    // Min-Heap Implementation
+    static class MinHeap {
+        private PriorityQueue<Integer> heap = new PriorityQueue<>();
+
+        public void insert(int value) {
+            heap.offer(value);
+        }
+
+        public int extractMin() {
+            return heap.poll();
+        }
+    }
+
+    // Splay Tree Implementation
+    static class SplayTree {
+        static class Node {
+            int key;
+            Node left, right, parent;
+            Node(int key) {
+                this.key = key;
+            }
+        }
+
+        private Node root;
+
+        public void insert(int key) {
+            Node z = root;
+            Node p = null;
+
+            while (z != null) {
+                p = z;
+                if (z.key < key) {
+                    z = z.right;
+                } else {
+                    z = z.left;
+                }
+            }
+
+            z = new Node(key);
+            z.parent = p;
+
+            if (p == null) {
+                root = z;
+            } else if (p.key < z.key) {
+                p.right = z;
+            } else {
+                p.left = z;
+            }
+
+            splay(z);
+        }
+
+        public boolean search(int key) {
+            Node x = searchHelper(root, key);
+            if (x != null) {
+                splay(x);
+                return true;
+            }
+            return false;
+        }
+
+        private Node searchHelper(Node x, int key) {
+            if (x == null || x.key == key) {
+                return x;
+            }
+            if (key < x.key) {
+                return searchHelper(x.left, key);
+            } else {
+                return searchHelper(x.right, key);
+            }
+        }
+
+        private void splay(Node x) {
+            while (x.parent != null) {
+                if (x.parent.parent == null) {
+                    if (x == x.parent.left) {
+                        // Zig rotation
+                        rightRotate(x.parent);
+                    } else {
+                        // Zag rotation
+                        leftRotate(x.parent);
+                    }
+                } else if (x == x.parent.left && x.parent == x.parent.parent.left) {
+                    // Zig-zig
+                    rightRotate(x.parent.parent);
+                    rightRotate(x.parent);
+                } else if (x == x.parent.right && x.parent == x.parent.parent.right) {
+                    // Zag-zag
+                    leftRotate(x.parent.parent);
+                    leftRotate(x.parent);
+                } else if (x == x.parent.right && x.parent == x.parent.parent.left) {
+                    // Zig-zag
+                    leftRotate(x.parent);
+                    rightRotate(x.parent);
+                } else {
+                    // Zag-zig
+                    rightRotate(x.parent);
+                    leftRotate(x.parent);
+                }
+            }
+        }
+
+        private void leftRotate(Node x) {
+            Node y = x.right;
+            x.right = y.left;
+            if (y.left != null) {
+                y.left.parent = x;
+            }
+            y.parent = x.parent;
+            if (x.parent == null) {
+                root = y;
+            } else if (x == x.parent.left) {
+                x.parent.left = y;
+            } else {
+                x.parent.right = y;
+            }
+            y.left = x;
+            x.parent = y;
+        }
+
+        private void rightRotate(Node x) {
+            Node y = x.left;
+            x.left = y.right;
+            if (y.right != null) {
+                y.right.parent = x;
+            }
+            y.parent = x.parent;
+            if (x.parent == null) {
+                root = y;
+            } else if (x == x.parent.right) {
+                x.parent.right = y;
+            } else {
+                x.parent.left = y;
+            }
+            y.right = x;
+            x.parent = y;
+        }
+    }
+
+    // Helper method to format path output
+    private static String formatPath(List<Integer> path, int totalCost) {
+        String route = path.stream()
+            .map(i -> locations[i])
+            .collect(Collectors.joining(" -> "));
+        return route + " | Total Cost: " + totalCost;
+    }
+
+    // Driver method
     public static void main(String[] args) {
-        getUserInput();
-        System.out.println("\nGreedy Approach:");
+        System.out.println("Greedy TSP:");
         System.out.println(greedyTSP(distanceMatrix));
-        System.out.println("\nDynamic Programming Approach:");
+        
+        System.out.println("\nDynamic Programming TSP:");
         System.out.println(dynamicProgrammingTSP(distanceMatrix));
-        System.out.println("\nBacktracking Approach:");
+        
+        System.out.println("\nBacktracking TSP:");
         System.out.println(backtrackingTSP(distanceMatrix));
+        
+        System.out.println("\nDivide and Conquer TSP:");
+        System.out.println(divideAndConquerTSP(distanceMatrix));
+
+        // Sorting and Searching
+        int[] arr = {8, 3, 5, 1, 9, 2};
+        System.out.println("\nSorting and Searching:");
+        System.out.println(insertionSort(arr));
+        System.out.println(binarySearch(arr, 5));
+
+        // Min-Heap Test
+        System.out.println("\nMin-Heap Test:");
+        MinHeap heap = new MinHeap();
+        heap.insert(10);
+        heap.insert(3);
+        heap.insert(15);
+        System.out.println("Min-Heap Extract Min: " + heap.extractMin());
+
+        // Splay Tree Test
+        System.out.println("\nSplay Tree Test:");
+        SplayTree tree = new SplayTree();
+        tree.insert(20);
+        tree.insert(10);
+        tree.insert(30);
+        System.out.println("Splay Tree Search (10 found): " + tree.search(10));
     }
 }
